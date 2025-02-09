@@ -1,128 +1,102 @@
-local ChestTeleportSystem = {}
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
 
--- Lưu trữ tất cả các Chest đã tìm thấy
-local chestLocations = {}
+-- Tạo ScreenGui và Button
+local player = Players.LocalPlayer
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "ChestTPGui"
+screenGui.Parent = player.PlayerGui
 
--- Hàm quét để tìm tất cả các Chest
-function ChestTeleportSystem.scanForChests()
-    local workspace = game:GetService("Workspace")
-    local mapsFolder = workspace:WaitForChild("Maps")
+local button = Instance.new("TextButton")
+button.Name = "TPButton"
+button.Text = "TP To Chests"
+button.Size = UDim2.new(0, 150, 0, 50)
+button.Position = UDim2.new(0.8, 0, 0.1, 0)
+button.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+button.TextColor3 = Color3.fromRGB(255, 255, 255)
+button.Font = Enum.Font.SourceSansBold
+button.TextSize = 18
+button.Parent = screenGui
+
+-- Function để lấy tất cả các chest
+local function getAllChests()
+    local chests = {}
+    local maps = workspace:FindFirstChild("Maps")
     
-    -- Xóa danh sách cũ trước khi quét mới
-    table.clear(chestLocations)
-    
-    -- Quét qua tất cả các Map
-    for _, mapModel in ipairs(mapsFolder:GetChildren()) do
-        local chestsFolder = mapModel:FindFirstChild("Chests")
-        if chestsFolder then
-            for _, chest in ipairs(chestsFolder:GetChildren()) do
-                if chest:IsA("Model") or chest:IsA("BasePart") then
-                    local chestPosition = chest:IsA("Model") and 
-                        chest:GetPrimaryPartCFrame().Position or 
-                        chest.Position
-                    
-                    table.insert(chestLocations, {
-                        name = chest.Name,
-                        mapName = mapModel.Name,
-                        instance = chest,
-                        position = chestPosition
-                    })
-                    print(string.format("Đã tìm thấy: %s trong map %s", chest.Name, mapModel.Name))
+    if maps then
+        for _, map in pairs(maps:GetChildren()) do
+            local chestsFolder = map:FindFirstChild("Chests")
+            if chestsFolder then
+                for _, chest in pairs(chestsFolder:GetDescendants()) do
+                    if chest:IsA("BasePart") and string.find(chest.Name:lower(), "chest") then
+                        table.insert(chests, chest)
+                    end
                 end
             end
         end
     end
     
-    print(string.format("Tổng số Chest đã tìm thấy: %d", #chestLocations))
-    return chestLocations
+    return chests
 end
 
--- Hàm teleport đến chest
-function ChestTeleportSystem.teleportToChest(player, chestName, mapName)
-    if not player or not player.Character then
-        warn("Không tìm thấy nhân vật của người chơi!")
-        return false
+-- Biến để theo dõi trạng thái
+local isTPRunning = false
+local currentChestIndex = 1
+local chests = {}
+
+-- Function để teleport
+local function teleportToChest(chest)
+    if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        local humanoidRootPart = player.Character.HumanoidRootPart
+        humanoidRootPart.CFrame = chest.CFrame + Vector3.new(0, 3, 0)
     end
-    
-    local humanoidRootPart = player.Character:FindFirstChild("HumanoidRootPart")
-    if not humanoidRootPart then
-        warn("Không tìm thấy HumanoidRootPart!")
-        return false
+end
+
+-- Function để dừng teleport
+local function stopTeleporting()
+    isTPRunning = false
+    currentChestIndex = 1
+end
+
+-- Function để bắt đầu teleport
+local function startTeleporting()
+    if isTPRunning then
+        stopTeleporting()
+        button.Text = "TP To Chests"
+        button.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+        return
     end
-    
-    -- Tìm chest phù hợp
-    for _, chestInfo in ipairs(chestLocations) do
-        if chestInfo.name == chestName and chestInfo.mapName == mapName then
-            -- Tạo offset để không teleport chính xác vào chest
-            local offset = Vector3.new(0, 5, 0)
-            local targetPosition = chestInfo.position + offset
+
+    chests = getAllChests()
+    if #chests == 0 then
+        button.Text = "No Chests Found!"
+        wait(1)
+        button.Text = "TP To Chests"
+        return
+    end
+
+    isTPRunning = true
+    button.Text = "Stop TP"
+    button.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+
+    -- Coroutine để teleport
+    spawn(function()
+        while isTPRunning do
+            if currentChestIndex > #chests then
+                currentChestIndex = 1
+            end
             
-            -- Thực hiện teleport
-            humanoidRootPart.CFrame = CFrame.new(targetPosition)
-            print(string.format("Đã teleport đến %s trong map %s", chestName, mapName))
-            return true
+            teleportToChest(chests[currentChestIndex])
+            currentChestIndex = currentChestIndex + 1
+            wait(0.1) -- Đợi 0.1 giây giữa mỗi lần teleport
         end
-    end
-    
-    warn(string.format("Không tìm thấy chest '%s' trong map '%s'!", chestName, mapName))
-    return false
+    end)
 end
 
--- Hàm lấy danh sách tất cả các chest
-function ChestTeleportSystem.getChestList()
-    local chestList = {}
-    for _, chestInfo in ipairs(chestLocations) do
-        table.insert(chestList, {
-            name = chestInfo.name,
-            mapName = chestInfo.mapName
-        })
-    end
-    return chestList
-end
+-- Kết nối button với function
+button.MouseButton1Click:Connect(startTeleporting)
 
--- Hàm hiển thị danh sách chest trong Output
-function ChestTeleportSystem.printChestList()
-    print("=== DANH SÁCH TẤT CẢ CHEST ===")
-    for _, chest in ipairs(chestLocations) do
-        print(string.format("- %s (Map: %s)", chest.name, chest.mapName))
-    end
-    print("=============================")
-end
-
--- Hàm tìm chest gần nhất với người chơi
-function ChestTeleportSystem.teleportToNearestChest(player)
-    if not player or not player.Character then return false end
-    
-    local humanoidRootPart = player.Character:FindFirstChild("HumanoidRootPart")
-    if not humanoidRootPart then return false end
-    
-    local playerPos = humanoidRootPart.Position
-    local nearestChest = nil
-    local shortestDistance = math.huge
-    
-    for _, chestInfo in ipairs(chestLocations) do
-        local distance = (chestInfo.position - playerPos).Magnitude
-        if distance < shortestDistance then
-            shortestDistance = distance
-            nearestChest = chestInfo
-        end
-    end
-    
-    if nearestChest then
-        return ChestTeleportSystem.teleportToChest(player, nearestChest.name, nearestChest.mapName)
-    end
-    
-    return false
-end
-
--- Khởi tạo hệ thống khi script được load
-ChestTeleportSystem.scanForChests()
-
--- Tự động cập nhật danh sách chest mỗi 30 giây
-spawn(function()
-    while wait(30) do
-        ChestTeleportSystem.scanForChests()
-    end
+-- Cleanup khi script bị hủy
+screenGui.Destroying:Connect(function()
+    stopTeleporting()
 end)
-
-return ChestTeleportSystem
